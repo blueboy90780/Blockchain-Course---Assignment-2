@@ -50,7 +50,9 @@ func main() {
 		fmt.Print("> ")
 		line, _ := reader.ReadString('\n')
 		line = strings.TrimSpace(line)
-		if line == "" { continue }
+		if line == "" {
+			continue
+		}
 		parts := strings.Fields(line)
 		cmd := strings.ToLower(parts[0])
 		switch cmd {
@@ -60,98 +62,174 @@ func main() {
 			printBalances(bc)
 		case "serve":
 			// serve <host:port>
-			if len(parts) != 2 { fmt.Println("usage: serve <host:port>"); continue }
+			if len(parts) != 2 {
+				fmt.Println("usage: serve <host:port>")
+				continue
+			}
 			addr := parts[1]
 			// Recreate node to bind address but keep peers if previously set
-			if node == nil { node = p2p.NewNode(addr, bc) } else {
+			if node == nil {
+				node = p2p.NewNode(addr, bc)
+			} else {
 				oldPeers := node.Peers()
 				node = p2p.NewNode(addr, bc)
-				for _, p := range oldPeers { node.AddPeer(p) }
+				for _, p := range oldPeers {
+					node.AddPeer(p)
+				}
 			}
 			go func() {
-				if err := node.Serve(); err != nil { fmt.Println("server error:", err) }
+				if err := node.Serve(); err != nil {
+					fmt.Println("server error:", err)
+				}
 			}()
 			fmt.Println("serving on", addr)
 		case "peer":
 			// peer add <host:port> | peer list
-			if len(parts) < 2 { fmt.Println("usage: peer add <addr> | peer list"); continue }
+			if len(parts) < 2 {
+				fmt.Println("usage: peer add <addr> | peer list")
+				continue
+			}
 			action := strings.ToLower(parts[1])
 			switch action {
 			case "add":
-				if len(parts) != 3 { fmt.Println("usage: peer add <host:port>"); continue }
-				if node == nil { node = p2p.NewNode(":0", bc) }
+				if len(parts) != 3 {
+					fmt.Println("usage: peer add <host:port>")
+					continue
+				}
+				if node == nil {
+					node = p2p.NewNode(":0", bc)
+				}
 				node.AddPeer(parts[2])
 				fmt.Println("added peer", parts[2])
 			case "list":
-				if node == nil { fmt.Println("no peers"); continue }
-				for _, p := range node.Peers() { fmt.Println(p) }
+				if node == nil {
+					fmt.Println("no peers")
+					continue
+				}
+				for _, p := range node.Peers() {
+					fmt.Println(p)
+				}
 			default:
 				fmt.Println("usage: peer add <addr> | peer list")
 			}
 		case "sync":
-			if node == nil { fmt.Println("not serving; add peers first with 'peer add'"); continue }
-			if err := node.Sync(); err != nil { fmt.Println("sync error:", err) } else { fmt.Println("sync complete") }
+			if node == nil {
+				fmt.Println("not serving; add peers first with 'peer add'")
+				continue
+			}
+			if err := node.Sync(); err != nil {
+				fmt.Println("sync error:", err)
+			} else {
+				fmt.Println("sync complete")
+			}
 		case "stake":
-			if len(parts) != 3 { fmt.Println("usage: stake <address> <amount>"); continue }
+			if len(parts) != 3 {
+				fmt.Println("usage: stake <address> <amount>")
+				continue
+			}
 			amt, err := strconv.ParseUint(parts[2], 10, 64)
-			if err != nil { fmt.Println("invalid amount"); continue }
+			if err != nil {
+				fmt.Println("invalid amount")
+				continue
+			}
 			bc.UpdateStake(parts[1], amt)
 			fmt.Println("updated stake for", parts[1], "=", amt)
 		case "tx":
 			// tx <from> <to> <amount> [privHex]
-			if len(parts) != 4 && len(parts) != 5 { fmt.Println("usage: tx <from> <to> <amount> [privHex]"); continue }
+			if len(parts) != 4 && len(parts) != 5 {
+				fmt.Println("usage: tx <from> <to> <amount> [privHex]")
+				continue
+			}
 			amt, err := strconv.ParseInt(parts[3], 10, 64)
-			if err != nil || amt <= 0 { fmt.Println("invalid amount"); continue }
+			if err != nil || amt <= 0 {
+				fmt.Println("invalid amount")
+				continue
+			}
 			from := parts[1]
 			to := parts[2]
 			// Coin selection: gather sender UTXOs until amount is covered, skipping inputs reserved by mempool
 			reserved := map[string]struct{}{}
-			for _, t := range bc.Mempool() { for _, in := range t.Inputs { reserved[fmt.Sprintf("%s:%d", in.TxID, in.Index)] = struct{}{} } }
+			for _, t := range bc.Mempool() {
+				for _, in := range t.Inputs {
+					reserved[fmt.Sprintf("%s:%d", in.TxID, in.Index)] = struct{}{}
+				}
+			}
 			utxos := bc.ListUTXO()
 			inputs := []types.TxInput{}
 			gathered := int64(0)
 			for _, e := range utxos {
-				if e.Output.To != from { continue }
+				if e.Output.To != from {
+					continue
+				}
 				key := fmt.Sprintf("%s:%d", e.TxID, e.Index)
-				if _, used := reserved[key]; used { continue }
+				if _, used := reserved[key]; used {
+					continue
+				}
 				inputs = append(inputs, types.TxInput{TxID: e.TxID, Index: e.Index})
 				gathered += e.Output.Amount
-				if gathered >= amt { break }
+				if gathered >= amt {
+					break
+				}
 			}
-			if gathered < amt { fmt.Println("insufficient UTXO to cover amount"); continue }
+			if gathered < amt {
+				fmt.Println("insufficient UTXO to cover amount")
+				continue
+			}
 			outputs := []types.TxOutput{{To: to, Amount: amt}}
 			change := gathered - amt
-			if change > 0 { outputs = append(outputs, types.TxOutput{To: from, Amount: change}) }
+			if change > 0 {
+				outputs = append(outputs, types.TxOutput{To: from, Amount: change})
+			}
 			tx := types.Transaction{ID: fmt.Sprintf("%s-%s-%d-%d", from, to, amt, time.Now().UnixNano()), From: from, Inputs: inputs, Outputs: outputs, Timestamp: time.Now().Unix()}
 			// If no privHex provided, try to auto-sign using wallets.json for From (alias or address)
 			if len(parts) == 5 || len(parts) == 4 {
 				var privHex string
-				if len(parts) == 5 { privHex = parts[4] } else {
+				if len(parts) == 5 {
+					privHex = parts[4]
+				} else {
 					store, _ := wallet.LoadStore(walletPath)
-					if w, ok := store[from]; ok { privHex = w.PrivKeyHex }
+					if w, ok := store[from]; ok {
+						privHex = w.PrivKeyHex
+					}
 				}
 				if privHex != "" {
 					priv, err := wallet.ParsePrivateKeyHex(privHex)
-					if err != nil { fmt.Println("bad private key:", err); continue }
+					if err != nil {
+						fmt.Println("bad private key:", err)
+						continue
+					}
 					h := tx.SignableHash()
 					sig, err := wallet.SignHash(priv, h[:])
-					if err != nil { fmt.Println("sign error:", err); continue }
+					if err != nil {
+						fmt.Println("sign error:", err)
+						continue
+					}
 					tx.SigHex = sig
 					tx.PubKeyHex = fmt.Sprintf("%x", wallet.MarshalPubkey(&priv.PublicKey))
 				}
 			}
-			if err := bc.SubmitTransaction(tx); err != nil { fmt.Println("tx rejected:", err); continue }
+			if err := bc.SubmitTransaction(tx); err != nil {
+				fmt.Println("tx rejected:", err)
+				continue
+			}
 			fmt.Println("tx accepted:", tx.ID)
-			if node != nil { node.BroadcastTx(tx) }
+			if node != nil {
+				node.BroadcastTx(tx)
+			}
 		case "keygen":
 			// Generate keypairs for all existing addresses in current balances
 			s := bc.Snapshot()
 			store, _ := wallet.LoadStore(walletPath)
 			created := 0
 			for addr := range s.State.Balances {
-				if _, exists := store[addr]; exists { continue }
+				if _, exists := store[addr]; exists {
+					continue
+				}
 				priv, pub, addr2, err := wallet.GenerateKey()
-				if err != nil { fmt.Println("keygen error:", err); continue }
+				if err != nil {
+					fmt.Println("keygen error:", err)
+					continue
+				}
 				// Ensure mapping corresponds to the loop address; warn if mismatch
 				if addr2 != addr {
 					// Still store under requested address label for user convenience
@@ -168,27 +246,57 @@ func main() {
 			if created == 0 {
 				fmt.Println("no new users without keys; nothing generated")
 			}
-			if err := wallet.SaveStore(walletPath, store); err != nil { fmt.Println("save wallets error:", err) } else { fmt.Printf("wallets saved to %s (new: %d)\n", walletPath, created) }
+			if err := wallet.SaveStore(walletPath, store); err != nil {
+				fmt.Println("save wallets error:", err)
+			} else {
+				fmt.Printf("wallets saved to %s (new: %d)\n", walletPath, created)
+			}
 		case "propose":
 			b, err := bc.ProposeBlock(1000)
-			if err != nil { fmt.Println("proposal failed:", err); continue }
+			if err != nil {
+				fmt.Println("proposal failed:", err)
+				continue
+			}
 			fmt.Printf("sealed block %d by %s with %d txs, hash=%s\n", b.Index, b.Validator, len(b.Txns), b.Hash[:16])
-			if node != nil { node.BroadcastBlock(b) }
+			if node != nil {
+				node.BroadcastBlock(b)
+			}
 		case "chain":
 			printChain(bc)
 		case "verify":
 			idx, err := bc.VerifyChain()
-			if err != nil { fmt.Println("chain invalid at", idx, ":", err) } else { fmt.Println("chain valid") }
+			if err != nil {
+				fmt.Println("chain invalid at", idx, ":", err)
+			} else {
+				fmt.Println("chain valid")
+			}
 		case "tamper":
 			// tamper <index>
-			if len(parts) != 2 { fmt.Println("usage: tamper <index>"); continue }
+			if len(parts) != 2 {
+				fmt.Println("usage: tamper <index>")
+				continue
+			}
 			i, _ := strconv.Atoi(parts[1])
-			if err := tamperBlock(bc, i); err != nil { fmt.Println("tamper failed:", err) } else { fmt.Println("tampered block", i) }
+			if err := tamperBlock(bc, i); err != nil {
+				fmt.Println("tamper failed:", err)
+			} else {
+				fmt.Println("tampered block", i)
+			}
 		case "save":
 			s := bc.Snapshot()
-			if err := persist.Save(snapshotPath, s); err != nil { fmt.Println("save error:", err) } else { fmt.Println("saved to", snapshotPath) }
+			if err := persist.Save(snapshotPath, s); err != nil {
+				fmt.Println("save error:", err)
+			} else {
+				fmt.Println("saved to", snapshotPath)
+			}
 		case "load":
-			if s, err := persist.Load(snapshotPath); err != nil { fmt.Println("load error:", err) } else if err := bc.LoadSnapshot(s); err != nil { fmt.Println("apply error:", err) } else { fmt.Println("loaded") }
+			if s, err := persist.Load(snapshotPath); err != nil {
+				fmt.Println("load error:", err)
+			} else if err := bc.LoadSnapshot(s); err != nil {
+				fmt.Println("apply error:", err)
+			} else {
+				fmt.Println("loaded")
+			}
 		case "export":
 			// export prints JSON snapshot to stdout
 			s := bc.Snapshot()
@@ -208,12 +316,12 @@ func defaultChain() *chain.Blockchain {
 	// Demo initial state: accounts and stakes
 	balances := map[string]int64{
 		"alice": 1000,
-		"bob": 1000,
+		"bob":   1000,
 		"carol": 1000,
 	}
 	stakes := map[string]uint64{
 		"alice": 60,
-		"bob": 30,
+		"bob":   30,
 		"carol": 10,
 	}
 	return chain.NewBlockchain(balances, stakes)
@@ -242,12 +350,25 @@ func printBalances(bc *chain.Blockchain) {
 	// Probe balances by exporting snapshot
 	s := bc.Snapshot()
 	// Sort display
-	type kv struct{ K string; V int64 }
+	type kv struct {
+		K string
+		V int64
+	}
 	list := make([]kv, 0, len(s.State.Balances))
-	for k, v := range s.State.Balances { list = append(list, kv{k, v}) }
+	for k, v := range s.State.Balances {
+		list = append(list, kv{k, v})
+	}
 	// simple bubble sort due to tiny size
-	for i := 0; i < len(list); i++ { for j := i+1; j < len(list); j++ { if list[j].K < list[i].K { list[i], list[j] = list[j], list[i] } } }
-	for _, it := range list { fmt.Printf("%s: %d\n", it.K, it.V) }
+	for i := 0; i < len(list); i++ {
+		for j := i + 1; j < len(list); j++ {
+			if list[j].K < list[i].K {
+				list[i], list[j] = list[j], list[i]
+			}
+		}
+	}
+	for _, it := range list {
+		fmt.Printf("%s: %d\n", it.K, it.V)
+	}
 }
 
 func printChain(bc *chain.Blockchain) {
@@ -257,21 +378,30 @@ func printChain(bc *chain.Blockchain) {
 	}
 }
 
-func short(s string) string { if len(s) <= 8 { return s }; return s[:8] }
+func short(s string) string {
+	if len(s) <= 8 {
+		return s
+	}
+	return s[:8]
+}
 
 // tamperBlock intentionally mutates a block's transaction data to break hashes.
 func tamperBlock(bc *chain.Blockchain, index int) error {
-	if index <= 0 { return errors.New("cannot tamper genesis or negative index") }
+	if index <= 0 {
+		return errors.New("cannot tamper genesis or negative index")
+	}
 	blocks := bc.Blocks() // returns pointers to actual blocks
-	if index >= len(blocks) { return fmt.Errorf("index out of range; chain length=%d", len(blocks)) }
+	if index >= len(blocks) {
+		return fmt.Errorf("index out of range; chain length=%d", len(blocks))
+	}
 	// Mutate in place without recomputing roots/hashes so verification will fail
 	if len(blocks[index].Txns) == 0 {
 		// Insert a fake tx with a tiny output to self to break Merkle root
 		blocks[index].Txns = append(blocks[index].Txns, types.Transaction{
-			ID: fmt.Sprintf("tampered-%d", time.Now().UnixNano()),
-			From: "alice",
-			Inputs:  []types.TxInput{},
-			Outputs: []types.TxOutput{{To: "alice", Amount: 1}},
+			ID:        fmt.Sprintf("tampered-%d", time.Now().UnixNano()),
+			From:      "alice",
+			Inputs:    []types.TxInput{},
+			Outputs:   []types.TxOutput{{To: "alice", Amount: 1}},
 			Timestamp: time.Now().Unix(),
 		})
 	} else {
@@ -284,4 +414,3 @@ func tamperBlock(bc *chain.Blockchain, index int) error {
 	// Do not update TxRoot or Hash intentionally
 	return nil
 }
-
