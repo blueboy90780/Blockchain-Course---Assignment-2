@@ -126,31 +126,8 @@ func (bc *Blockchain) SubmitTransaction(tx types.Transaction) error {
 		return errors.New("tx must have inputs and outputs")
 	}
 	// Verify signature when provided (optional for backward compatibility)
-	if tx.From != "coinbase" && (tx.SigHex != "" || tx.PubKeyHex != "") {
-		if tx.PubKeyHex == "" || tx.SigHex == "" {
-			return errors.New("missing signature")
-		}
-		pubBytes, err := hex.DecodeString(tx.PubKeyHex)
-		if err != nil {
-			return fmt.Errorf("bad pubkey: %w", err)
-		}
-		pub, err := wallet.UnmarshalPubkey(pubBytes)
-		if err != nil {
-			return fmt.Errorf("bad pubkey: %w", err)
-		}
-		h := tx.SignableHash()
-		ok, err := wallet.VerifyHash(pub, h[:], tx.SigHex)
-		if err != nil || !ok {
-			return errors.New("invalid signature")
-		}
-		// If From looks like a hex address (40 hex chars), require it to match signer address.
-		// If From is an alias (e.g., "alice"), allow signature without strict address match.
-		if isHexAddress(tx.From) {
-			addr := wallet.AddressFromPublicKey(pub)
-			if addr != tx.From {
-				return errors.New("from does not match pubkey address")
-			}
-		}
+	if err := verifyTxSig(tx); err != nil {
+		return err
 	}
 	inSum := int64(0)
 	for _, in := range tx.Inputs {
@@ -198,29 +175,8 @@ func (bc *Blockchain) validateAndApplyTx(st *State, tx types.Transaction) error 
 		return errors.New("tx must have inputs and outputs")
 	}
 	// Verify signature when provided (optional for backward compatibility)
-	if tx.From != "coinbase" && (tx.SigHex != "" || tx.PubKeyHex != "") {
-		if tx.PubKeyHex == "" || tx.SigHex == "" {
-			return errors.New("missing signature")
-		}
-		pubBytes, err := hex.DecodeString(tx.PubKeyHex)
-		if err != nil {
-			return fmt.Errorf("bad pubkey: %w", err)
-		}
-		pub, err := wallet.UnmarshalPubkey(pubBytes)
-		if err != nil {
-			return fmt.Errorf("bad pubkey: %w", err)
-		}
-		h := tx.SignableHash()
-		ok, err := wallet.VerifyHash(pub, h[:], tx.SigHex)
-		if err != nil || !ok {
-			return errors.New("invalid signature")
-		}
-		if isHexAddress(tx.From) {
-			addr := wallet.AddressFromPublicKey(pub)
-			if addr != tx.From {
-				return errors.New("from does not match pubkey address")
-			}
-		}
+	if err := verifyTxSig(tx); err != nil {
+		return err
 	}
 	inSum := int64(0)
 	// verify inputs exist and belong to From
@@ -643,4 +599,39 @@ func isHexAddress(s string) bool {
 	}
 	_, err := hex.DecodeString(s)
 	return err == nil
+}
+
+// verifyTxSig checks optional signatures on a transaction. For coinbase, no checks.
+// If both PubKeyHex and SigHex are empty, signature verification is skipped (legacy/educational mode).
+// If provided, the signature must verify; and if From is a 40-hex address, it must match the signer address.
+func verifyTxSig(tx types.Transaction) error {
+	if tx.From == "coinbase" {
+		return nil
+	}
+	if tx.SigHex == "" && tx.PubKeyHex == "" {
+		return nil // unsigned allowed in this educational chain
+	}
+	if tx.PubKeyHex == "" || tx.SigHex == "" {
+		return errors.New("missing signature")
+	}
+	pubBytes, err := hex.DecodeString(tx.PubKeyHex)
+	if err != nil {
+		return fmt.Errorf("bad pubkey: %w", err)
+	}
+	pub, err := wallet.UnmarshalPubkey(pubBytes)
+	if err != nil {
+		return fmt.Errorf("bad pubkey: %w", err)
+	}
+	h := tx.SignableHash()
+	ok, err := wallet.VerifyHash(pub, h[:], tx.SigHex)
+	if err != nil || !ok {
+		return errors.New("invalid signature")
+	}
+	if isHexAddress(tx.From) {
+		addr := wallet.AddressFromPublicKey(pub)
+		if addr != tx.From {
+			return errors.New("from does not match pubkey address")
+		}
+	}
+	return nil
 }
